@@ -39,9 +39,7 @@ private:
     QString pathToAppImage;
     QString integratedAppImagesDestinationPath;
 
-    void setIcon();
-
-    void setMessage();
+    void loadAppImageInfo();
 };
 
 #endif //APPIMAGELAUNCHER_INTEGRATION_DIALOG_H
