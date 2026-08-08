@@ -66,7 +66,8 @@ IntegrationState integrateAppImage(const QString& pathToAppImage, const QString&
 // < 0: unset; 0 = false; > 0 = true
 // destination is a string that, when empty, will be interpreted as "use default"
 void createConfigFile(int askToMove, const QString& destination, int enableDaemon,
-                      const QStringList& additionalDirsToWatch = {}, int monitorMountedFilesystems = -1, int createCliSymlinks = -1, int useSimplifiedNames = -1);
+                      const QStringList& additionalDirsToWatch = {}, int monitorMountedFilesystems = -1, int createCliSymlinks = -1,
+                      int useSimplifiedNames = -1, const QStringList& excludePaths = {});
 
 // replaces ~ character in paths with real home directory, if necessary and possible
 QString expandTilde(QString path);
@@ -198,3 +199,6 @@ QString getCommandNameMapping(const QString& pathToAppImage);
  * @param pathToAppImage Chemin vers l'AppImage
  */
 void removeCommandNameMapping(const QString& pathToAppImage);
+
+// Check if a given path is in the exclude list
+bool isPathExcluded(const QSettings* config, const QString& path);

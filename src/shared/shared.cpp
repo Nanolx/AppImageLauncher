@@ -112,7 +112,8 @@ void createConfigFile(int askToMove,
                       const QStringList& additionalDirsToWatch,
                       int monitorMountedFilesystems,
                       int createCliSymlinks,
-                      int useSimplifiedNames) {
+                      int useSimplifiedNames,
+                      const QStringList& excludePaths) {
     auto configFilePath = getConfigFilePath();
 
     QFile file(configFilePath);
@@ -163,6 +164,16 @@ void createConfigFile(int askToMove,
         }
         file.write("\n");
     }
+
+    if (excludePaths.empty()) {
+        file.write("# exclude_paths = /opt/appimages/:/even/more/app-images.AppImage\n");
+    } else {
+        file.write("exclude_paths = ");
+        file.write(excludePaths.join(':').toUtf8());
+        file.write("\n");
+    }
+
+    file.write("\n\n");
 
     if (useSimplifiedNames < 0) {
         file.write("# use_simplified_names = true\n");
@@ -427,6 +438,29 @@ bool shallMonitorMountedFilesystems(const QSettings* config) {
     return config->value("appimagelauncherd/monitor_mounted_filesystems", "false").toBool();
 }
 
+bool sanitizePath(QString& path) {
+    // empty values will, for some reason, be interpreted as "use the home directory"
+    // as we don't want to accidentally monitor the home directory, we need to skip those values
+    if (path.isEmpty()) {
+        qDebug() << "skipping empty directory path";
+        return false;
+    }
+
+    // make sure to have full path
+    qDebug() << "path before tilde expansion:" << path;
+    path = expandTilde(path);
+    qDebug() << "path after tilde expansion:" << path;
+
+    // non-absolute paths which don't contain a tilde cannot be resolved safely, they likley depend on the cwd
+    // therefore, we need to ignore those
+    if (!QFileInfo(path).isAbsolute()) {
+        std::cerr << "Warning: path " << path.toStdString() << " can not be resolved, skipping" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 QDirSet getAdditionalDirectoriesFromConfig(const QSettings* config) {
     Q_ASSERT(config != nullptr);
 
@@ -437,33 +471,16 @@ QDirSet getAdditionalDirectoriesFromConfig(const QSettings* config) {
     QDirSet additionalDirs{};
 
     for (auto dirPath : configValue.split(":")) {
-        // empty values will, for some reason, be interpreted as "use the home directory"
-        // as we don't want to accidentally monitor the home directory, we need to skip those values
-        if (dirPath.isEmpty()) {
-            qDebug() << "skipping empty directory path";
+        if(!sanitizePath(dirPath)) {
             continue;
         }
 
-        // make sure to have full path
-        qDebug() << "path before tilde expansion:" << dirPath;
-        dirPath = expandTilde(dirPath);
-        qDebug() << "path after tilde expansion:" << dirPath;
-
-        // non-absolute paths which don't contain a tilde cannot be resolved safely, they likley depend on the cwd
-        // therefore, we need to ignore those
-        if (!QFileInfo(dirPath).isAbsolute()) {
-            std::cerr << "Warning: path " << dirPath.toStdString() << " can not be resolved, skipping" << std::endl;
-            continue;
-        }
-
-        const QDir dir(dirPath);
-
-        if (!dir.exists()) {
+        if (!QDir(dirPath).exists()) {
             std::cerr << "Warning: could not find directory " << dirPath.toStdString() << ", skipping" << std::endl;
             continue;
         }
 
-        additionalDirs.insert(dir);
+        additionalDirs.insert(dirPath);
     }
 
     return additionalDirs;
@@ -1834,4 +1851,27 @@ QString extractCommandName(const QString& pathToAppImage) {
     commandName = sanitizeCommandName(QFileInfo(pathToAppImage).baseName());
 
     return commandName;
+}
+
+bool isPathExcluded(const QSettings* config, const QString& path) {
+    Q_ASSERT(config != nullptr);
+
+    constexpr auto configKey = "AppImageLauncher/exclude_paths";
+    const auto configValue = config->value(configKey, "").toString();
+    qDebug() << configKey << "value:" << configValue;
+
+    for (auto excludePath : configValue.split(":")) {
+        if(!sanitizePath(excludePath)) {
+            continue;
+        }
+
+        if (QFileInfo(excludePath) == QFileInfo(path)) {
+            return true;
+        }
+
+        if (QDir(excludePath).exists() && QFileInfo(path).absoluteFilePath().startsWith(excludePath)) {
+            return true;
+        }
+    }
+    return false;
 }
